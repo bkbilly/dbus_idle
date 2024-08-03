@@ -42,7 +42,8 @@ class IdleMonitor:
                 logger.debug("Using: %s", monitor_class.__name__)
                 return idle_time
             except Exception:
-                logger.warning("Could not load %s", monitor_class.__name__, exc_info=False)
+                logger.debug("Could not load %s", monitor_class.__name__, exc_info=False)
+        logger.warning("Could not find any working monitor to get idle time.", exc_info=True)
         return None
 
 
