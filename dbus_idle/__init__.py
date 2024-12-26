@@ -13,6 +13,7 @@ class IdleMonitor:
 
     def __init__(self, *, idle_threshold: int = 120, debug: bool=False) -> None:
         self.idle_threshold = idle_threshold
+        self.class_used = None
         if debug:
             logger.setLevel(logging.DEBUG)
 
@@ -36,14 +37,17 @@ class IdleMonitor:
         """
         Return idle time in milliseconds.
         """
-        for monitor_class in self.subclasses:
-            try:
-                idle_time = monitor_class().get_dbus_idle()
-                logger.debug("Using: %s", monitor_class.__name__)
-                return idle_time
-            except Exception:
-                logger.warning("Could not load %s", monitor_class.__name__, exc_info=False)
-        return None
+        if self.class_used is None:
+            for monitor_class in self.subclasses:
+                try:
+                    self.class_used = monitor_class()
+                    logger.debug("Using: %s", monitor_class.__name__)
+                    return self.class_used.get_dbus_idle()
+                except Exception:
+                    logger.warning("Could not load %s", monitor_class.__name__, exc_info=False)
+            return None
+        else:
+            return self.class_used.get_dbus_idle()
 
 
     def is_idle(self) -> bool:
