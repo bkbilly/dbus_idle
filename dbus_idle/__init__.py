@@ -44,11 +44,15 @@ class IdleMonitor:
                     logger.debug("Using: %s", monitor_class.__name__)
                     return self.class_used.get_dbus_idle()
                 except Exception:
-                    logger.warning("Could not load %s", monitor_class.__name__, exc_info=False)
+                    logger.info("Could not load %s", monitor_class.__name__, exc_info=False)
+            logger.warning("Could not find any working monitor to get idle time.", exc_info=True)
             return None
         else:
-            return self.class_used.get_dbus_idle()
-
+            try:
+                return self.class_used.get_dbus_idle()
+            except Exception as e:
+                logger.warning("Can't run the working monitor enymore.", exc_info=False)
+                return None
 
     def is_idle(self) -> bool:
         """
