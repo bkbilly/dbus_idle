@@ -70,22 +70,31 @@ class DBusIdleMonitor(IdleMonitor):
     """
 
     def __init__(self, **kwargs) -> None:
-        from dasbus.connection import SessionMessageBus
-        super().__init__(**kwargs)
+        from jeepney import DBusAddress, new_method_call
+        from jeepney.io.blocking import open_dbus_connection
 
-        session_bus = SessionMessageBus()
-        for service in session_bus.proxy.ListNames():
-            if 'IdleMonitor' in service:
+        self.connection = open_dbus_connection(bus="SESSION")
+        dbus_addr = DBusAddress(
+            object_path="/org/freedesktop/DBus",
+            bus_name="org.freedesktop.DBus",
+            interface="org.freedesktop.DBus",
+        )
+
+        msg = new_method_call(remote_obj=dbus_addr, method="ListNames")
+        reply = self.connection.send_and_get_reply(msg)
+        self.idle_msg = None
+        for service in reply.body[0]:
+            if "IdleMonitor" in service:
                 service_path = f"/{service.replace('.', '/')}/Core"
-                self.connection = session_bus.get_proxy(service, service_path)
-                self.service = service
+                idle_addr = DBusAddress(service_path, bus_name=service, interface=service)
+                self.idle_msg = new_method_call(remote_obj=idle_addr, method="GetIdletime")
                 break
-        if not hasattr(self, 'connection'):
+        if self.idle_msg is None:
             raise AttributeError()
 
     def get_dbus_idle(self) -> float:
-        dbus_idle = self.connection.GetIdletime()
-        return int(dbus_idle)
+        idle_reply = self.connection.send_and_get_reply(self.idle_msg)
+        return int(idle_reply.body[0])
 
 
 class XprintidleIdleMonitor(IdleMonitor):

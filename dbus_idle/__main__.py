@@ -9,5 +9,6 @@ def main():
     parser.add_argument("-d", "--debug", action="store_true", help="Show debug messeges")
     args = parser.parse_args()
 
-    milliseconds = IdleMonitor(debug=args.debug).get_dbus_idle()
+    idle_monitor = IdleMonitor(debug=args.debug)
+    milliseconds = idle_monitor.get_dbus_idle()
     print(milliseconds)
