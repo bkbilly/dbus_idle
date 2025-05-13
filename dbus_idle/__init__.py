@@ -1,3 +1,4 @@
+import time
 import ctypes
 import ctypes.util
 import logging
@@ -166,6 +167,10 @@ class X11IdleMonitor(IdleMonitor):
         # allocate memory for idle information
         self.xss_info = self.lib_xss.XScreenSaverAllocInfo()
 
+        status = self.lib_xss.XScreenSaverQueryInfo(self.display, self.root_window, self.xss_info)
+        if status == 0:
+            raise RuntimeError("Not Supported...")
+
     def get_dbus_idle(self) -> float:
         self.lib_xss.XScreenSaverQueryInfo(self.display, self.root_window, self.xss_info)
         return self.xss_info.contents.idle
@@ -175,6 +180,34 @@ class X11IdleMonitor(IdleMonitor):
         if path is None:
             raise OSError(f"Could not find library `{name}`")
         return ctypes.cdll.LoadLibrary(path)
+
+
+class SwayIdleMonitor(IdleMonitor):
+    """Idle monitor using swayidle command for Wayland environments."""
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.output_file = "/tmp/idletime.txt"
+        command = subprocess.run(
+            ["swayidle"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE)
+        if command.returncode != 0:
+            raise AttributeError()
+        with open(self.output_file, "w") as file:
+            file.write("0")
+        subprocess.run(
+            f'swayidle -w timeout 1 "echo -n \\$(date +%s) > {self.output_file}" resume "echo -n 0 > {self.output_file}" &',
+            shell=True,
+        )
+
+    def get_dbus_idle(self) -> float:
+        with open(self.output_file, "r") as file:
+            idle_time = int(file.read())
+            if idle_time != 0:
+                idle_time = time.time() - idle_time
+
+        return round(idle_time, 1)
 
 
 class WindowsIdleMonitor(IdleMonitor):
