@@ -207,7 +207,7 @@ class SwayIdleMonitor(IdleMonitor):
             if idle_time != 0:
                 idle_time = time.time() - idle_time
 
-        return round(idle_time, 1)
+        return idle_time * 1000
 
 
 class WindowsIdleMonitor(IdleMonitor):
