@@ -14,10 +14,11 @@ logger = logging.getLogger("dbus_idle")
 class IdleMonitor:
     subclasses: List[Type["IdleMonitor"]] = []
 
-    def __init__(self, *, idle_threshold: int = 120_000, debug: bool=False) -> None:
+    def __init__(self, *, idle_threshold: int = 120_000, debug: int | bool = 0) -> None:
         self.idle_threshold = idle_threshold
         self.class_used = None
-        if debug:
+        self.debug = int(debug)
+        if self.debug:
             logger.setLevel(logging.DEBUG)
 
     def __init_subclass__(self) -> None:
@@ -44,18 +45,28 @@ class IdleMonitor:
             for monitor_class in self.subclasses:
                 try:
                     self.class_used = monitor_class()
-                    logger.debug("Using: %s", monitor_class.__name__)
+                    logger.info("Using: %s", monitor_class.__name__)
                     return self.class_used.get_dbus_idle()
                 except Exception:
-                    logger.info("Could not load %s", monitor_class.__name__, exc_info=False)
+                    logger.debug(
+                        "Could not load %s",
+                        monitor_class.__name__,
+                        exc_info=self.debug > 1,
+                    )
                     self.class_used = None
-            logger.warning("Could not find any working monitor to get idle time.")
+            logger.warning(
+                "Could not find any working monitor to get idle time.",
+                exc_info=False,
+            )
             return None
         else:
             try:
                 return self.class_used.get_dbus_idle()
             except Exception:
-                logger.warning("Can't run the working monitor anymore.", exc_info=False)
+                logger.warning(
+                    "Can't run the working monitor enymore.",
+                    exc_info=self.debug > 1,
+                )
                 self.class_used = None
                 return None
 
@@ -186,7 +197,7 @@ class XprintidleIdleMonitor(IdleMonitor):
 
 class X11IdleMonitor(IdleMonitor):
     """
-    Idle monitor for systems running X11.
+    Idle monitor for systems running X11 (XScreenSaverInfo).
 
     Based on
       * http://tperl.blogspot.com/2007/09/x11-idle-time-and-focused-window-in.html
@@ -420,7 +431,7 @@ class SwayIdleMonitor(IdleMonitor):
 
 class WindowsIdleMonitor(IdleMonitor):
     """
-    Idle monitor for Windows.
+    Idle monitor for Windows (GetLastInputInfo).
 
     Based on
       * https://stackoverflow.com/q/911856
@@ -434,4 +445,34 @@ class WindowsIdleMonitor(IdleMonitor):
     def get_dbus_idle(self) -> float:
         current_tick = self.win32api.GetTickCount()
         last_tick = self.win32api.GetLastInputInfo()
-        return float(current_tick - last_tick)
+        # Handle wraparound
+        return current_tick - last_tick + (2**32 if current_tick < last_tick else 0)
+
+class IORegIdleMonitor(IdleMonitor):
+    """
+    Idle monitor for macOS (IOHIDSystem.HIDIdleTime).
+
+    Based on
+        * https://stackoverflow.com/a/17966890
+    """
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        import plistlib
+        self.plistlib = plistlib
+        # make sure we can run
+        self.get_dbus_idle()
+
+    def get_dbus_idle(self) -> float:
+        command = subprocess.run(
+            ["ioreg", "-arc", "IOHIDSystem"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if command.returncode != 0:
+            raise RuntimeError(
+                f"ioreg -arc IOHIDSystem returned {command.returncode}."
+            )
+        plist = self.plistlib.loads(command.stdout)
+
+        return plist[0]["HIDIdleTime"] / 1_000_000

@@ -4,7 +4,7 @@
 ![python version](https://img.shields.io/pypi/pyversions/dbus-idle.svg)
 ![license](https://img.shields.io/pypi/l/dbus-idle.svg)
 
-Python library to detect user idle time in milliseconds or inactivity on Linux and Windows.
+Python library to detect user idle time in milliseconds (and from that, inactivity) on Linux, Windows, and macOS.
 
 
 ## Requirements
