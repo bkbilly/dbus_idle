@@ -231,19 +231,39 @@ class SwayIdleMonitor(IdleMonitor):
             raise AttributeError()
         with open(self.output_file, "w") as file:
             file.write("0")
-        subprocess.run(
-            f'swayidle -w timeout 1 "echo -n \\$(date +%s) > {self.output_file}" resume "echo -n 0 > {self.output_file}" &',
-            shell=True,
-        )
+        command = subprocess.run(
+            ["date", "+%s.%N"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE)
+        if command.returncode != 0:
+            date_cmd = "date +%s"
+        else:
+            date_cmd = "date +%s.%N"
+        self.idleproc = subprocess.Popen(
+            [
+                "swayidle",
+                "-w",
+                "timeout",
+                "1",
+                f'{date_cmd} > {self.output_file}',
+                "resume",
+                f'echo -n 0 > {self.output_file}',
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
 
     def get_dbus_idle(self) -> float:
         with open(self.output_file, "r") as file:
-            idle_time = int(file.read())
+            idle_time = float(file.read())
             if idle_time != 0:
-                idle_time = time.time() - idle_time
+                # 1 being the timeout from swayidle
+                idle_time = time.time() - idle_time + 1
 
         return idle_time * 1000
-
+    
+    def __del__(self):
+        if hasattr(self, "idleproc"):
+            self.idleproc.terminate()
 
 class WindowsIdleMonitor(IdleMonitor):
     """
