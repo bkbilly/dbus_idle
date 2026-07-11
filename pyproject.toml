@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools~=68.0.0", "wheel~=0.40.0"]
+requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name              = "dbus_idle"
-version           = "2025.5.1"
+version           = "2026.7.0"
 description       = "System idle time using DBus"
 readme            = "README.md"
 keywords          = ["dbus_idle", "dbus-idle"]
