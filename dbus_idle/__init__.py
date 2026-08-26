@@ -228,6 +228,7 @@ class SwayIdleMonitor(IdleMonitor):
 
         super().__init__(**kwargs)
         self.idleproc = None
+        self.state_dir = None
         self.output_file = None
         self.staging_file = None
 
@@ -238,15 +239,10 @@ class SwayIdleMonitor(IdleMonitor):
             raise AttributeError()
 
         try:
-            state_file = tempfile.NamedTemporaryFile(
-                mode="w",
-                prefix="dbus-idle-",
-                suffix=".state",
-                delete=False,
-            )
-            self.output_file = state_file.name
-            self.staging_file = f"{self.output_file}.next"
-            with state_file:
+            self.state_dir = tempfile.mkdtemp(prefix="dbus-idle-")
+            self.output_file = os.path.join(self.state_dir, "idle.state")
+            self.staging_file = os.path.join(self.state_dir, "idle.state.next")
+            with open(self.output_file, "w") as state_file:
                 state_file.write("0")
         except Exception:
             self.close()
@@ -338,6 +334,17 @@ class SwayIdleMonitor(IdleMonitor):
                     os.unlink(path)
                 except OSError:
                     pass
+
+        state_dir = getattr(self, "state_dir", None)
+        if state_dir is not None:
+            try:
+                os.rmdir(state_dir)
+            except FileNotFoundError:
+                self.state_dir = None
+            except OSError:
+                pass
+            else:
+                self.state_dir = None
 
     def __del__(self) -> None:
         self.close()

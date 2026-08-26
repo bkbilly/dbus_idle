@@ -49,7 +49,11 @@ class SwayIdleMonitorTests(unittest.TestCase):
         first = self.make_monitor()
         second = self.make_monitor()
 
+        self.assertNotEqual(first.state_dir, second.state_dir)
         self.assertNotEqual(first.output_file, second.output_file)
+        self.assertEqual(os.stat(first.state_dir).st_mode & 0o777, 0o700)
+        self.assertEqual(os.path.dirname(first.output_file), first.state_dir)
+        self.assertEqual(os.path.dirname(first.staging_file), first.state_dir)
         self.assertTrue(os.path.exists(first.output_file))
         self.assertTrue(os.path.exists(second.output_file))
 
@@ -81,6 +85,7 @@ class SwayIdleMonitorTests(unittest.TestCase):
 
     def test_close_stops_process_and_removes_state(self):
         monitor = self.make_monitor()
+        state_dir = monitor.state_dir
         output_file = monitor.output_file
         staging_file = monitor.staging_file
         with open(staging_file, "w") as state_file:
@@ -93,6 +98,25 @@ class SwayIdleMonitorTests(unittest.TestCase):
         self.process.wait.assert_called_once_with(timeout=1)
         self.assertFalse(os.path.exists(output_file))
         self.assertFalse(os.path.exists(staging_file))
+        self.assertFalse(os.path.exists(state_dir))
+
+    def test_close_retries_state_directory_removal(self):
+        monitor = self.make_monitor()
+        state_dir = monitor.state_dir
+        blocker = os.path.join(state_dir, "late-staging-file")
+        with open(blocker, "w") as state_file:
+            state_file.write("pending")
+
+        monitor.close()
+
+        self.assertEqual(monitor.state_dir, state_dir)
+        self.assertTrue(os.path.isdir(state_dir))
+
+        os.unlink(blocker)
+        monitor.close()
+
+        self.assertIsNone(monitor.state_dir)
+        self.assertFalse(os.path.exists(state_dir))
 
     def test_close_kills_a_process_that_ignores_terminate(self):
         self.process.wait.side_effect = [subprocess.TimeoutExpired("swayidle", 1), 0]
@@ -126,26 +150,24 @@ class SwayIdleMonitorTests(unittest.TestCase):
         self.assertFalse(os.path.exists(output_file))
 
     def test_failed_start_removes_state_file(self):
-        state_file = tempfile.NamedTemporaryFile(mode="w", delete=False)
-        state_path = state_file.name
+        state_dir = tempfile.mkdtemp()
         self.popen_mock.side_effect = OSError("cannot start")
 
-        with patch("dbus_idle.tempfile.NamedTemporaryFile", return_value=state_file):
+        with patch("dbus_idle.tempfile.mkdtemp", return_value=state_dir):
             with self.assertRaisesRegex(OSError, "cannot start"):
                 SwayIdleMonitor()
 
-        self.assertFalse(os.path.exists(state_path))
+        self.assertFalse(os.path.exists(state_dir))
 
     def test_failed_date_probe_removes_state_file(self):
-        state_file = tempfile.NamedTemporaryFile(mode="w", delete=False)
-        state_path = state_file.name
+        state_dir = tempfile.mkdtemp()
         self.run_mock.side_effect = OSError("date failed")
 
-        with patch("dbus_idle.tempfile.NamedTemporaryFile", return_value=state_file):
+        with patch("dbus_idle.tempfile.mkdtemp", return_value=state_dir):
             with self.assertRaisesRegex(OSError, "date failed"):
                 SwayIdleMonitor()
 
-        self.assertFalse(os.path.exists(state_path))
+        self.assertFalse(os.path.exists(state_dir))
 
 
 if __name__ == "__main__":
