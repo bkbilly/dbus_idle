@@ -111,17 +111,16 @@ class XprintidleIdleMonitor(IdleMonitor):
     """Idle monitor using xprintidle command."""
 
     def __init__(self, **kwargs) -> None:
+        from shutil import which
+
         super().__init__(**kwargs)
-        command = subprocess.run(
-            ["which", "xprintidle"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE)
-        if command.returncode != 0:
+        self.executable = which("xprintidle")
+        if self.executable is None:
             raise AttributeError()
 
     def get_dbus_idle(self) -> float:
         res = subprocess.run(
-            'xprintidle',
+            [self.executable],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
         if res.returncode != 0:
