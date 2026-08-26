@@ -7,6 +7,13 @@ import subprocess
 
 
 logger = logging.getLogger("dbus_idle")
+logger.addHandler(logging.NullHandler())
+
+
+def _enable_debug_logging() -> None:
+    """Make the explicit debug opt-in visible without configuring imports."""
+    logging.basicConfig(level=logging.DEBUG)
+    logger.setLevel(logging.DEBUG)
 
 class IdleMonitor:
     subclasses: List[Type["IdleMonitor"]] = []
@@ -15,7 +22,7 @@ class IdleMonitor:
         self.idle_threshold = idle_threshold
         self.class_used = None
         if debug:
-            logger.setLevel(logging.DEBUG)
+            _enable_debug_logging()
 
     def __init_subclass__(self) -> None:
         super().__init_subclass__()
