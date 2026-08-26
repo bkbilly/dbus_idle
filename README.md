@@ -34,5 +34,12 @@ from dbus_idle import IdleMonitor
 milliseconds = IdleMonitor().get_dbus_idle()
 ```
 
+`IdleMonitor.is_idle()` uses a 120-second threshold by default. Both
+`idle_threshold` and `get_dbus_idle()` use milliseconds:
+
+```python
+monitor = IdleMonitor(idle_threshold=120_000)
+```
+
 ## Contribution
 This is based on the work by [Alexander Frenzel](https://github.com/escaped/dbus_idle)
