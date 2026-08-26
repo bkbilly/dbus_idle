@@ -120,7 +120,7 @@ class DBusIdleMonitor(IdleMonitor):
                 self.idle_scale = 1000.0
             if self.idle_msg is None:
                 raise AttributeError()
-            self.initial_idle = self._read_idle()
+            self._read_idle()
         except Exception:
             self.close()
             raise
@@ -137,10 +137,6 @@ class DBusIdleMonitor(IdleMonitor):
 
     def get_dbus_idle(self) -> float:
         try:
-            if self.initial_idle is not None:
-                idle = self.initial_idle
-                self.initial_idle = None
-                return idle
             return self._read_idle()
         except Exception:
             self.close()
@@ -151,7 +147,6 @@ class DBusIdleMonitor(IdleMonitor):
         if connection is None:
             return
         self.connection = None
-        self.initial_idle = None
         try:
             connection.close()
         except Exception:
