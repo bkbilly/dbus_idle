@@ -4,6 +4,9 @@ import ctypes.util
 import logging
 from typing import Any, List, Type
 import subprocess
+import os
+import shlex
+import tempfile
 
 
 logger = logging.getLogger("dbus_idle")
@@ -221,49 +224,123 @@ class SwayIdleMonitor(IdleMonitor):
     """Idle monitor using swayidle command for Wayland environments."""
 
     def __init__(self, **kwargs) -> None:
+        from shutil import which
+
         super().__init__(**kwargs)
-        self.output_file = "/tmp/idletime.txt"
-        command = subprocess.run(
-            ["which", "swayidle"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE)
-        if command.returncode != 0:
+        self.idleproc = None
+        self.output_file = None
+        self.staging_file = None
+
+        swayidle = which("swayidle")
+        date = which("date")
+        move = which("mv")
+        if swayidle is None or date is None or move is None:
             raise AttributeError()
-        with open(self.output_file, "w") as file:
-            file.write("0")
-        command = subprocess.run(
-            ["date", "+%s.%N"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE)
-        if command.returncode != 0:
-            date_cmd = "date +%s"
-        else:
-            date_cmd = "date +%s.%N"
-        self.idleproc = subprocess.Popen(
-            [
-                "swayidle",
-                "-w",
-                "timeout",
-                "1",
-                f'{date_cmd} > {self.output_file}',
-                "resume",
-                f'echo -n 0 > {self.output_file}',
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL)
+
+        try:
+            state_file = tempfile.NamedTemporaryFile(
+                mode="w",
+                prefix="dbus-idle-",
+                suffix=".state",
+                delete=False,
+            )
+            self.output_file = state_file.name
+            self.staging_file = f"{self.output_file}.next"
+            with state_file:
+                state_file.write("0")
+        except Exception:
+            self.close()
+            raise
+
+        try:
+            date_format = "+%s.%N"
+            command = subprocess.run(
+                [date, date_format],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                if command.returncode != 0:
+                    raise ValueError
+                float(command.stdout.strip())
+            except (AttributeError, ValueError):
+                date_format = "+%s"
+
+            output_file = shlex.quote(self.output_file)
+            staging_file = shlex.quote(self.staging_file)
+            date_command = f"{shlex.quote(date)} {date_format}"
+            move_command = shlex.quote(move)
+            timeout_command = (
+                f"umask 077; {date_command} > {staging_file} && "
+                f"{move_command} {staging_file} {output_file}"
+            )
+            resume_command = (
+                f"umask 077; printf 0 > {staging_file} && "
+                f"{move_command} {staging_file} {output_file}"
+            )
+
+            self.idleproc = subprocess.Popen(
+                [
+                    swayidle,
+                    "-w",
+                    "timeout",
+                    "1",
+                    timeout_command,
+                    "resume",
+                    resume_command,
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            self.close()
+            raise
 
     def get_dbus_idle(self) -> float:
-        with open(self.output_file, "r") as file:
-            idle_time = float(file.read())
-            if idle_time != 0:
-                # 1 being the timeout from swayidle
-                idle_time = time.time() - idle_time + 1
+        try:
+            if self.idleproc is None:
+                raise RuntimeError("swayidle monitor is closed")
 
-        return idle_time * 1000
-    
-    def __del__(self):
-        if hasattr(self, "idleproc"):
-            self.idleproc.terminate()
+            returncode = self.idleproc.poll()
+            if returncode is not None:
+                raise RuntimeError(f"swayidle exited with status {returncode}")
+
+            with open(self.output_file, "r") as file:
+                idle_time = float(file.read())
+            if idle_time != 0:
+                # swayidle records the timestamp after the one-second timeout.
+                idle_time = max(0.0, time.time() - idle_time + 1)
+
+            return idle_time * 1000
+        except Exception:
+            self.close()
+            raise
+
+    def close(self) -> None:
+        idleproc = getattr(self, "idleproc", None)
+        self.idleproc = None
+        if idleproc is not None:
+            try:
+                if idleproc.poll() is None:
+                    idleproc.terminate()
+                    try:
+                        idleproc.wait(timeout=1)
+                    except subprocess.TimeoutExpired:
+                        idleproc.kill()
+                        idleproc.wait()
+            except Exception:
+                pass
+
+        for path in (getattr(self, "staging_file", None), getattr(self, "output_file", None)):
+            if path is not None:
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
+
+    def __del__(self) -> None:
+        self.close()
 
 class WindowsIdleMonitor(IdleMonitor):
     """
