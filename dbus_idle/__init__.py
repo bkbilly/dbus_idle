@@ -210,10 +210,13 @@ class X11IdleMonitor(IdleMonitor):
         self.lib_x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
         self.lib_x11.XOpenDisplay.restype = ctypes.c_void_p
         self.lib_x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
-        self.lib_x11.XDefaultRootWindow.restype = ctypes.c_uint32
+        self.lib_x11.XDefaultRootWindow.restype = ctypes.c_ulong
         self.lib_x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
         self.lib_x11.XCloseDisplay.restype = ctypes.c_int
+        self.lib_x11.XFree.argtypes = [ctypes.c_void_p]
+        self.lib_x11.XFree.restype = ctypes.c_int
 
+        self.xss_info = None
         self.display = self.lib_x11.XOpenDisplay(None)
         if self.display is None:
             raise AttributeError()
@@ -225,31 +228,39 @@ class X11IdleMonitor(IdleMonitor):
             # specify required types
             self.lib_xss.XScreenSaverQueryInfo.argtypes = [
                 ctypes.c_void_p,
-                ctypes.c_uint32,
+                ctypes.c_ulong,
                 ctypes.POINTER(XScreenSaverInfo),
             ]
             self.lib_xss.XScreenSaverQueryInfo.restype = ctypes.c_int
+            self.lib_xss.XScreenSaverAllocInfo.argtypes = []
             self.lib_xss.XScreenSaverAllocInfo.restype = ctypes.POINTER(XScreenSaverInfo)
             # allocate memory for idle information
             self.xss_info = self.lib_xss.XScreenSaverAllocInfo()
+            if not self.xss_info:
+                raise MemoryError("Could not allocate XScreenSaverInfo")
 
             status = self.lib_xss.XScreenSaverQueryInfo(self.display, self.root_window, self.xss_info)
             if status == 0:
                 raise RuntimeError("Not Supported...")
         except Exception:
-            if getattr(self, "display", None) and getattr(self, "lib_x11", None):
-                try:
-                    self.lib_x11.XCloseDisplay(self.display)
-                except Exception:
-                    pass
-                self.display = None
+            self.close()
             raise
 
     def get_dbus_idle(self) -> float:
-        status = self.lib_xss.XScreenSaverQueryInfo(self.display, self.root_window, self.xss_info)
-        if status == 0:
-            raise RuntimeError("XScreenSaverQueryInfo failed")
-        return float(self.xss_info.contents.idle)
+        try:
+            if self.display is None or self.xss_info is None:
+                raise RuntimeError("X11 idle monitor is closed")
+            status = self.lib_xss.XScreenSaverQueryInfo(
+                self.display,
+                self.root_window,
+                self.xss_info,
+            )
+            if status == 0:
+                raise RuntimeError("XScreenSaverQueryInfo failed")
+            return float(self.xss_info.contents.idle)
+        except Exception:
+            self.close()
+            raise
 
     def _load_lib(self, name: str) -> Any:
         path = ctypes.util.find_library(name)
@@ -257,13 +268,24 @@ class X11IdleMonitor(IdleMonitor):
             raise OSError(f"Could not find library `{name}`")
         return ctypes.cdll.LoadLibrary(path)
 
-    def __del__(self) -> None:
+    def close(self) -> None:
+        if getattr(self, "xss_info", None) and getattr(self, "lib_x11", None):
+            try:
+                self.lib_x11.XFree(self.xss_info)
+            except Exception:
+                pass
+            finally:
+                self.xss_info = None
         if getattr(self, "display", None) and getattr(self, "lib_x11", None):
             try:
                 self.lib_x11.XCloseDisplay(self.display)
-                self.display = None
             except Exception:
                 pass
+            finally:
+                self.display = None
+
+    def __del__(self) -> None:
+        self.close()
 
 
 class SwayIdleMonitor(IdleMonitor):
