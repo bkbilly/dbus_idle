@@ -2,21 +2,27 @@ import time
 import ctypes
 import ctypes.util
 import logging
-from typing import Any, List, Type
+from typing import Any, List, Optional, Type
 import subprocess
 
 
 logger = logging.getLogger("dbus_idle")
-logging.basicConfig(level=logging.ERROR)
+logger.addHandler(logging.NullHandler())
+
+
+def _enable_debug_logging() -> None:
+    """Make the explicit debug opt-in visible without configuring imports."""
+    logging.basicConfig(level=logging.DEBUG)
+    logger.setLevel(logging.DEBUG)
 
 class IdleMonitor:
     subclasses: List[Type["IdleMonitor"]] = []
 
-    def __init__(self, *, idle_threshold: int = 120, debug: bool=False) -> None:
+    def __init__(self, *, idle_threshold: int = 120_000, debug: bool=False) -> None:
         self.idle_threshold = idle_threshold
         self.class_used = None
         if debug:
-            logger.setLevel(logging.DEBUG)
+            _enable_debug_logging()
 
     def __init_subclass__(self) -> None:
         super().__init_subclass__()
@@ -34,7 +40,7 @@ class IdleMonitor:
                 logger.warning("Could not load %s", monitor_class, exc_info=True)
         raise RuntimeError("Could not find a working monitor.")
 
-    def get_dbus_idle(self) -> float:
+    def get_dbus_idle(self) -> Optional[float]:
         """
         Return idle time in milliseconds.
         """
@@ -47,12 +53,12 @@ class IdleMonitor:
                 except Exception:
                     logger.info("Could not load %s", monitor_class.__name__, exc_info=False)
                     self.class_used = None
-            logger.warning("Could not find any working monitor to get idle time.", exc_info=True)
+            logger.warning("Could not find any working monitor to get idle time.")
             return None
         else:
             try:
                 return self.class_used.get_dbus_idle()
-            except Exception as e:
+            except Exception:
                 logger.warning("Can't run the working monitor anymore.", exc_info=False)
                 self.class_used = None
                 return None
