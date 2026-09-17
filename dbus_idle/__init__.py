@@ -69,42 +69,91 @@ class IdleMonitor:
 
 class DBusIdleMonitor(IdleMonitor):
     """
-    Idle monitor for Linux desktop environments (GNOME, KDE Plasma, etc.) running on DBus.
+    Idle monitor for GNOME and KDE X11 sessions running on DBus.
 
     Based on
       * https://unix.stackexchange.com/a/492328
     """
 
     def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
         from jeepney import DBusAddress, new_method_call
         from jeepney.io.blocking import open_dbus_connection
+        from jeepney.low_level import MessageType
 
+        self.message_error_type = MessageType.error
         self.connection = open_dbus_connection(bus="SESSION")
-        dbus_addr = DBusAddress(
-            object_path="/org/freedesktop/DBus",
-            bus_name="org.freedesktop.DBus",
-            interface="org.freedesktop.DBus",
-        )
+        try:
+            dbus_addr = DBusAddress(
+                object_path="/org/freedesktop/DBus",
+                bus_name="org.freedesktop.DBus",
+                interface="org.freedesktop.DBus",
+            )
 
-        msg = new_method_call(remote_obj=dbus_addr, method="ListNames")
-        reply = self.connection.send_and_get_reply(msg)
-        self.idle_msg = None
-        for service in reply.body[0]:
-            if "IdleMonitor" in service:
-                service_path = f"/{service.replace('.', '/')}/Core"
-                idle_addr = DBusAddress(service_path, bus_name=service, interface=service)
-                self.idle_msg = new_method_call(remote_obj=idle_addr, method="GetIdletime")
-                break
-            elif "org.kde.IdleTime" in service or service == "org.kde.IdleTime":
-                idle_addr = DBusAddress("/org/kde/IdleTime", bus_name=service, interface="org.kde.IdleTime")
-                self.idle_msg = new_method_call(remote_obj=idle_addr, method="getIdleTime")
-                break
-        if self.idle_msg is None:
-            raise AttributeError()
+            msg = new_method_call(remote_obj=dbus_addr, method="ListNames")
+            reply = self.connection.send_and_get_reply(msg)
+            self.idle_msg = None
+            self.idle_scale = 1.0
+            services = set(reply.body[0])
+            gnome_service = "org.gnome.Mutter.IdleMonitor"
+            kde_service = "org.freedesktop.ScreenSaver"
+            if gnome_service in services:
+                idle_addr = DBusAddress(
+                    "/org/gnome/Mutter/IdleMonitor/Core",
+                    bus_name=gnome_service,
+                    interface=gnome_service,
+                )
+                self.idle_msg = new_method_call(
+                    remote_obj=idle_addr,
+                    method="GetIdletime",
+                )
+            elif kde_service in services:
+                idle_addr = DBusAddress(
+                    "/ScreenSaver",
+                    bus_name=kde_service,
+                    interface=kde_service,
+                )
+                self.idle_msg = new_method_call(
+                    remote_obj=idle_addr,
+                    method="GetSessionIdleTime",
+                )
+                self.idle_scale = 1000.0
+            if self.idle_msg is None:
+                raise AttributeError()
+            self._read_idle()
+        except Exception:
+            self.close()
+            raise
+
+    def _read_idle(self) -> float:
+        if self.connection is None:
+            raise RuntimeError("DBus idle monitor is closed")
+        idle_reply = self.connection.send_and_get_reply(self.idle_msg)
+        message_type = getattr(getattr(idle_reply, "header", None), "message_type", None)
+        if message_type == self.message_error_type:
+            detail = idle_reply.body[0] if idle_reply.body else "DBus idle query failed"
+            raise RuntimeError(detail)
+        return float(idle_reply.body[0]) * self.idle_scale
 
     def get_dbus_idle(self) -> float:
-        idle_reply = self.connection.send_and_get_reply(self.idle_msg)
-        return float(idle_reply.body[0])
+        try:
+            return self._read_idle()
+        except Exception:
+            self.close()
+            raise
+
+    def close(self) -> None:
+        connection = getattr(self, "connection", None)
+        if connection is None:
+            return
+        self.connection = None
+        try:
+            connection.close()
+        except Exception:
+            pass
+
+    def __del__(self) -> None:
+        self.close()
 
 
 class XprintidleIdleMonitor(IdleMonitor):
