@@ -42,4 +42,4 @@ monitor = IdleMonitor(idle_threshold=120_000)
 ```
 
 ## Contribution
-This is based on the work by [Alexander Frenzel](https://github.com/escaped/dbus_idle)
+This is based on the work by [Alexander Frenzel](https://github.com/escaped/idle_time)
