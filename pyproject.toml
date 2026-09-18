@@ -19,7 +19,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "jeepney>=0.9.0 ; platform_system not in ('Windows', 'Darwin')",
+    "jeepney>=0.9.0 ; platform_system != 'Windows' and platform_system != 'Darwin'",
     "pywin32>=221 ; platform_system == 'Windows'",
 ]
 
