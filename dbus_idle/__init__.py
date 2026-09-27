@@ -19,7 +19,7 @@ class IdleMonitor:
         self.class_used = None
         self.debug = int(debug)
         if self.debug:
-            logger.setLevel(logging.DEBUG)
+            logging.basicConfig(level=logging.DEBUG)
 
     def __init_subclass__(self) -> None:
         super().__init_subclass__()
@@ -45,7 +45,7 @@ class IdleMonitor:
             for monitor_class in self.subclasses:
                 try:
                     self.class_used = monitor_class()
-                    logger.info("Using: %s", monitor_class.__name__)
+                    logger.debug("Using: %s", monitor_class.__name__)
                     return self.class_used.get_dbus_idle()
                 except Exception:
                     logger.debug(
