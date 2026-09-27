@@ -4,12 +4,19 @@
 ![python version](https://img.shields.io/pypi/pyversions/dbus-idle.svg)
 ![license](https://img.shields.io/pypi/l/dbus-idle.svg)
 
-Python library to detect user idle time in milliseconds or inactivity on Linux and Windows.
+Python library to detect user idle time in milliseconds (and from that, inactivity) on Linux, Windows, and macOS.
 
 
 ## Requirements
 
 * Python 3.7 or later
+* One of the following:
+  * D-Bus with `org.freedesktop.DBus` interface
+  * `xprintidle` command
+  * libX11 with `XScreenSaverInfo`
+  * `swayidle` command
+  * Windows
+  * macOS
 
 
 ## Installation
@@ -20,6 +27,10 @@ sudo apt install meson libdbus-glib-1-dev patchelf
 pip install dbus-idle
 ```
 
+On non-Linux systems,
+```
+pip install dbus-idle
+```
 
 ## Usage
 

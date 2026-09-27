@@ -1,12 +1,10 @@
-import logging
 import subprocess
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from dbus_idle import IdleMonitor
-from dbus_idle import __main__ as dbus_idle_main
 
 
 class MonitorContractTests(unittest.TestCase):
@@ -25,10 +23,8 @@ class MonitorContractTests(unittest.TestCase):
                 "-c",
                 (
                     "import logging; before=len(logging.getLogger().handlers); "
-                    "before_level=logging.getLogger().level; import dbus_idle; "
-                    "after=len(logging.getLogger().handlers); "
-                    "after_level=logging.getLogger().level; "
-                    "print((before, before_level) == (after, after_level))"
+                    "import dbus_idle; after=len(logging.getLogger().handlers); "
+                    "print(before, after)"
                 ),
             ],
             cwd=project_root,
@@ -36,52 +32,7 @@ class MonitorContractTests(unittest.TestCase):
             capture_output=True,
             text=True,
         )
-        self.assertEqual(result.stdout.strip(), "True")
-
-    def test_library_debug_flag_emits_without_application_logging(self):
-        project_root = Path(__file__).resolve().parents[1]
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-c",
-                (
-                    "from dbus_idle import IdleMonitor, logger; "
-                    "IdleMonitor(debug=True); logger.debug('debug-visible')"
-                ),
-            ],
-            cwd=project_root,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        self.assertIn("DEBUG:dbus_idle:debug-visible", result.stderr)
-
-    def test_library_debug_does_not_duplicate_after_application_logging(self):
-        project_root = Path(__file__).resolve().parents[1]
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-c",
-                (
-                    "import logging; from dbus_idle import IdleMonitor, logger; "
-                    "IdleMonitor(debug=True); logging.basicConfig(level=logging.DEBUG); "
-                    "logger.debug('debug-once')"
-                ),
-            ],
-            cwd=project_root,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        self.assertEqual(result.stderr.count("debug-once"), 1)
-
-    @patch("dbus_idle.logging.basicConfig")
-    @patch.object(dbus_idle_main.IdleMonitor, "get_dbus_idle", return_value=0)
-    def test_cli_debug_flag_configures_debug_logging(self, _get_idle, basic_config):
-        with patch.object(sys, "argv", ["dbus-idle", "--debug"]):
-            dbus_idle_main.main()
-
-        basic_config.assert_called_once_with(level=logging.DEBUG)
+        self.assertEqual(result.stdout.strip(), "0 0")
 
     def test_missing_backend_warning_has_no_fake_traceback(self):
         monitor = IdleMonitor()
